@@ -19,12 +19,49 @@ go run ./cmd/rss_reader -url https://feeds.bbci.co.uk/news/rss.xml -limit 5
 go run ./cmd/rss_reader -import-opml feeds.opml -limit 3
 ```
 
+### 导入时去重
+```bash
+go run ./cmd/rss_reader -import-opml feeds.opml -dedup
+```
+
 ### 导出订阅源为 OPML 文件
 ```bash
 go run ./cmd/rss_reader -export-opml feeds.opml -feeds "BBC News|https://feeds.bbci.co.uk/news/rss.xml|News,CNN|http://rss.cnn.com/rss/cnn_topstories.rss|News,TechCrunch|https://techcrunch.com/feed/|Technology"
 ```
 
 `-feeds` 参数使用逗号分隔多个源，每个源用 `标题|URL|分类` 描述，分类可选。
+
+## OPML 管理子命令
+
+### 添加订阅源
+```bash
+go run ./cmd/rss_reader opml add -file feeds.opml -title "BBC" -url https://feeds.bbci.co.uk/news/rss.xml -category News
+```
+
+### 列出订阅源
+```bash
+go run ./cmd/rss_reader opml list -file feeds.opml
+```
+
+### 删除订阅源
+```bash
+go run ./cmd/rss_reader opml remove -file feeds.opml -id 3
+```
+
+### 更新订阅源
+```bash
+go run ./cmd/rss_reader opml update -file feeds.opml -id 3 -title "New Title" -url https://example.com/rss
+```
+
+### 校验并修复 OPML
+```bash
+go run ./cmd/rss_reader opml validate -file feeds.opml -fix
+```
+
+### 合并多个 OPML 文件
+```bash
+go run ./cmd/rss_reader opml merge -output merged.opml feeds1.opml feeds2.opml
+```
 
 ## 命令行参数说明
 
@@ -36,6 +73,7 @@ go run ./cmd/rss_reader -export-opml feeds.opml -feeds "BBC News|https://feeds.b
 | `-import-opml` | 导入 OPML 文件的路径 | `feeds.opml` |
 | `-export-opml` | 导出 OPML 文件的保存路径 | `feeds.opml` |
 | `-feeds` | 导出时的源列表（使用 `|` 和 `,` 分隔） | 见上方导出示例 |
+| `-dedup` | 导入时按 URL 去重 | `-dedup` |
 
 ## OPML 文件格式
 
