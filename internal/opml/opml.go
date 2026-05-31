@@ -190,6 +190,128 @@ func sortFeeds(feeds []FeedItem) {
 	})
 }
 
+// DedupFeeds removes duplicate feeds based on XMLURL, keeping the first occurrence.
+func DedupFeeds(feeds []FeedItem) []FeedItem {
+	seen := make(map[string]bool)
+	var result []FeedItem
+	for _, feed := range feeds {
+		key := strings.TrimSpace(feed.XMLURL)
+		if key == "" {
+			continue
+		}
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, feed)
+		}
+	}
+	return result
+}
+
+// ValidateResult contains the result of OPML validation.
+type ValidateResult struct {
+	Valid  bool
+	Errors []string
+	Feeds  []FeedItem
+}
+
+// Validate checks an OPML document for common issues and attempts auto-repair.
+func Validate(data []byte) ValidateResult {
+	result := ValidateResult{Valid: true}
+
+	opmlDoc := OPML{}
+	if err := xml.Unmarshal(data, &opmlDoc); err != nil {
+		result.Valid = false
+		result.Errors = append(result.Errors, fmt.Sprintf("invalid XML: %v", err))
+		return result
+	}
+
+	if opmlDoc.Version == "" {
+		result.Errors = append(result.Errors, "missing opml version attribute, auto-repaired: defaulting to 2.0")
+		opmlDoc.Version = "2.0"
+	}
+
+	if opmlDoc.Head.Title == "" {
+		result.Errors = append(result.Errors, "missing head/title, auto-repaired: defaulting to 'RSS Feeds'")
+		opmlDoc.Head.Title = "RSS Feeds"
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if opmlDoc.Head.DateCreated == "" {
+		result.Errors = append(result.Errors, "missing head/dateCreated, auto-repaired: set to current time")
+		opmlDoc.Head.DateCreated = now
+	}
+
+	if opmlDoc.Head.DateModified == "" {
+		result.Errors = append(result.Errors, "missing head/dateModified, auto-repaired: set to current time")
+		opmlDoc.Head.DateModified = now
+	}
+
+	var feeds []FeedItem
+	walkOutlines(opmlDoc.Body.Outlines, nil, &feeds)
+	result.Feeds = feeds
+
+	fixCount := 0
+	for i, feed := range feeds {
+		if feed.XMLURL == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("feed %d (%q): missing xmlUrl, skipped", i, feed.Title))
+			continue
+		}
+		if feed.Title == "" {
+			feeds[i].Title = feed.XMLURL
+			fixCount++
+		}
+	}
+	if fixCount > 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("auto-repaired: %d feeds with missing title default to xmlUrl", fixCount))
+	}
+
+	if len(feeds) == 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, "no valid RSS feeds found")
+	}
+
+	return result
+}
+
+// MergeFeeds imports and merges feeds from multiple OPML files with deduplication.
+func MergeFeeds(files []string, dedup bool) ([]FeedItem, error) {
+	var allFeeds []FeedItem
+	seen := make(map[string]bool)
+
+	for _, file := range files {
+		feeds, err := ImportFeeds(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to import %s: %w", file, err)
+		}
+		for _, feed := range feeds {
+			key := strings.TrimSpace(feed.XMLURL)
+			if key == "" {
+				continue
+			}
+			if dedup && seen[key] {
+				continue
+			}
+			seen[key] = true
+			allFeeds = append(allFeeds, feed)
+		}
+	}
+
+	return allFeeds, nil
+}
+
+// LoadFeeds loads feeds from an OPML file, returning both feeds and the raw OPML data.
+func LoadFeeds(filename string) ([]FeedItem, []byte, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read OPML file: %w", err)
+	}
+	feeds, err := ImportFeedsFromReader(strings.NewReader(string(data)))
+	if err != nil {
+		return nil, nil, err
+	}
+	return feeds, data, nil
+}
+
 func walkOutlines(outlines []Outline, categoryPath []string, feeds *[]FeedItem) {
 	for _, outline := range outlines {
 		nextCategoryPath := categoryPath
